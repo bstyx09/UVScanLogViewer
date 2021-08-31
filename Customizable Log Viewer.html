@@ -1,0 +1,839 @@
+<!DOCTYPE HTML>
+<html>
+
+
+
+<head>
+  <script>
+
+    var finalObject;
+    var headers;
+    var jsonObj = [];
+    var charts = [];
+    var advanceDps = [], krDps = [], boostDps = [], desiredAFRDps = [], measuredAFRDps = [], narrowbandDps = [], MAFDps = [], RPMDps = [], throttleDps = [], injdutycycleDps = [], mpcDps = [];
+    var sparkChart, mafAndRPMChart, airFuelChart, boostAndThrottle;
+    var chartColor = "light2";
+    var chartPIDs = {};
+    var dataPsArray = [];
+    var selectedChart = [{ key1: "Spark", key2: "KR", key3: "Gear" }, { key1: "MAF", key2: "RPM", key3: "MPC" }, { key1: "AFR", key2: "Measured_AFR_autometer", key3: "O2" }, { key1: "MAPkPa", key2: "TP_percent", key3: "Inj_Duty_Cycle" }];
+
+    async function loadFile(file) {
+      headers = [];
+      dataPsArray = [];
+      let text = await file.text();
+      //console.log(text);
+      var fileText = text;
+      //charts = [];
+      advanceDps = [], krDps = [], boostDps = [], desiredAFRDps = [], measuredAFRDps = [], narrowbandDps = [], MAFDps = [], RPMDps = [], throttleDps = [], injdutycycleDps = [], mpcDps = [];
+
+      //extract the data
+      arr = fileText.split("\r\n");
+      var jsonObj = [];
+      headers = arr[0].split(',');
+      //clean up the headers so you can use them
+      for (var i = 0; i < headers.length; i++) {
+        headers[i] = headers[i].replaceAll(" ", "_");
+        headers[i] = headers[i].replaceAll("(", "");
+        headers[i] = headers[i].replaceAll(")", "");
+        headers[i] = headers[i].replaceAll(".", "");
+        headers[i] = headers[i].replaceAll("%", "percent");
+      }
+
+      for (var i = 1; i < arr.length; i++) {
+        var data = arr[i].split(',');
+        var obj = {};
+        for (var j = 0; j < data.length; j++) {
+          obj[headers[j].trim()] = data[j].trim();
+        }
+        jsonObj.push(obj);
+      }
+      JSON.stringify(jsonObj);
+      finalObject = jsonObj;
+      console.log(jsonObj);
+
+      for (var i = 0; i < finalObject.length; i++) {
+        advanceDps.push({ x: parseInt(i), y: parseInt(finalObject[i].Spark) });
+        krDps.push({ x: parseInt(i), y: parseFloat(finalObject[i].KR) });
+        boostDps.push({ x: parseInt(i), y: parseFloat(finalObject[i].MAPkPa) });
+        desiredAFRDps.push({ x: parseInt(i), y: parseFloat(finalObject[i].AFR) });
+        measuredAFRDps.push({ x: parseInt(i), y: parseFloat((parseFloat(finalObject[i].ADC_Input_3) * (7 / 4) + 10)) });
+        narrowbandDps.push({ x: parseInt(i), y: parseFloat((parseFloat(finalObject[i].O2) / 1000)) });
+        MAFDps.push({ x: parseInt(i), y: parseInt(finalObject[i].MAF) });
+        RPMDps.push({ x: parseInt(i), y: parseInt(finalObject[i].RPM) });
+        throttleDps.push({ x: parseInt(i), y: parseInt(finalObject[i].TP_percent) });
+        injdutycycleDps.push({ x: parseInt(i), y: parseFloat(finalObject[i].Inj_Duty_Cycle) });
+        mpcDps.push({ x: parseInt(i), y: parseFloat(finalObject[i].MPC) });
+      }
+      buildDataPoints();
+      if (document.getElementById("container1s1").firstChild == null) {
+
+      } else {
+        cleanItems();
+      }
+      loadItems();
+      populateDefaultSelections();
+
+      run();
+    }
+
+    function reRun() {
+      run();
+    }
+
+    function run() {
+
+      updatePids();
+
+      var toolTip = {
+        shared: true
+      },
+        legend = {
+          cursor: "pointer",
+          itemclick: function (e) {
+            if (typeof (e.dataSeries.visible) === "undefined" || e.dataSeries.visible) {
+              e.dataSeries.visible = false;
+            } else {
+              e.dataSeries.visible = true;
+            }
+            e.chart.render();
+          }
+        };
+
+      var systemDps = [], userDps = [], waitDps = [], buffersDps = [], cacheDps = [], usedDps = [], inboundDps = [], outboundDps = [], writeDps = [], readDps = [];
+
+      sparkChart = {
+        animationEnabled: true,
+        theme: chartColor, // "light1", "light2", "dark1", "dark2"
+        title: {
+          text: ""
+        },
+        toolTip: toolTip,
+        axisY: {
+          valueFormatString: "#0.#",
+        },
+        legend: legend,
+        data: [{
+          type: "splineArea",
+          showInLegend: "true",
+          name: selectedChart[0].key1,
+          yValueFormatString: "#0#",
+          color: "#64b5f6",
+          xValueType: "count",
+          xValueFormatString: "",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[0].key1)]
+        }, {
+          type: "splineArea",
+          showInLegend: "true",
+          name: selectedChart[0].key2,
+          yValueFormatString: "#0.0#",
+          color: "red",
+          xValueType: "count",
+          xValueFormatString: "",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[0].key2)]
+        }, {
+          type: "splineArea",
+          showInLegend: "true",
+          name: selectedChart[0].key3,
+          yValueFormatString: "#0.0#",
+          color: "orange",
+          xValueType: "count",
+          xValueFormatString: "",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[0].key3)]
+        }]
+      };
+      mafAndRPMChart = {
+        animationEnabled: true,
+        theme: chartColor,
+        title: {
+          text: ""
+        },
+        axisY: {
+          valueFormatString: "#0.#",
+        },
+        toolTip: toolTip,
+        legend: legend,
+        data: [{
+          type: "splineArea",
+          showInLegend: "true",
+          name: selectedChart[1].key1,
+          color: "#FF8E3B",
+          xValueType: "count",
+          xValueFormatString: "",
+          yValueFormatString: "#0.##",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[1].key1)]
+        }, {
+          type: "line",
+          showInLegend: "true",
+          name: selectedChart[1].key2,
+          color: "#00A3B9",
+          xValueType: "count",
+          xValueFormatString: "",
+          yValueFormatString: "#0.##",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[1].key2)]
+        }, {
+          type: "splineArea",
+          showInLegend: "true",
+          name: selectedChart[1].key3,
+          color: "#00BC39",
+          xValueType: "count",
+          xValueFormatString: "",
+          yValueFormatString: "#.##",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[1].key3)]
+        }]
+      }
+      airFuelChart = {
+        animationEnabled: true,
+        theme: chartColor,
+        title: {
+          text: ""
+        },
+        axisY: {
+          valueFormatString: "#0.00#",
+        },
+        toolTip: toolTip,
+        legend: legend,
+        data: [{
+          type: "line",
+          showInLegend: "true",
+          name: selectedChart[2].key1,
+          color: "#2B8BFF",
+          xValueType: "count",
+          xValueFormatString: "",
+          yValueFormatString: "#.##",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[2].key1)]
+        }, {
+          type: "line",
+          showInLegend: "true",
+          name: selectedChart[2].key2,
+          color: "#20B062",
+          xValueType: "count",
+          xValueFormatString: "",
+          yValueFormatString: "#.##",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[2].key2)]
+        }, {
+          type: "splineArea",
+          showInLegend: "true",
+          name: selectedChart[2].key3,
+          color: "#CADC7A",
+          xValueType: "count",
+          xValueFormatString: "",
+          yValueFormatString: "#0.##",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[2].key3)]
+        }]
+      }
+      boostAndThrottle = {
+        animationEnabled: true,
+        theme: chartColor,
+        title: {
+          text: ""
+        },
+        axisY: {},
+        toolTip: toolTip,
+        legend: legend,
+        data: [{
+          type: "splineArea",
+          showInLegend: "true",
+          name: selectedChart[3].key1,
+          color: "#7080DF",
+          xValueType: "count",
+          xValueFormatString: "",
+          yValueFormatString: "#.##",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[3].key1)]
+        }, {
+          type: "splineArea",
+          showInLegend: "true",
+          name: selectedChart[3].key2,
+          color: "#00BC39",
+          xValueType: "count",
+          xValueFormatString: "",
+          yValueFormatString: "#.##",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[3].key2)]
+        }, {
+          type: "splineArea",
+          showInLegend: "true",
+          name: selectedChart[3].key3,
+          color: "blue",
+          xValueType: "count",
+          xValueFormatString: "",
+          yValueFormatString: "#.##",
+          legendMarkerType: "square",
+          dataPoints: dataPsArray[headers.lastIndexOf(selectedChart[3].key3)]
+        }]
+      }
+
+
+      charts.push(new CanvasJS.Chart("chartContainer1", sparkChart));
+      charts.push(new CanvasJS.Chart("chartContainer2", mafAndRPMChart));
+      charts.push(new CanvasJS.Chart("chartContainer3", airFuelChart));
+      charts.push(new CanvasJS.Chart("chartContainer4", boostAndThrottle));
+
+      for (var i = 0; i < charts.length; i++) {
+        charts[i].options.axisX = {
+          labelAngle: 0,
+          crosshair: {
+            enabled: true,
+            snapToDataPoint: true,
+            valueFormatString: ""
+          }
+        }
+      }
+
+      function syncCharts(charts, syncToolTip, syncCrosshair, syncAxisXRange) {
+
+        if (!this.onToolTipUpdated) {
+          this.onToolTipUpdated = function (e) {
+            for (var j = 0; j < charts.length; j++) {
+              if (charts[j] != e.chart)
+                charts[j].toolTip.showAtX(e.entries[0].xValue);
+            }
+          }
+        }
+
+        if (!this.onToolTipHidden) {
+          this.onToolTipHidden = function (e) {
+            for (var j = 0; j < charts.length; j++) {
+              if (charts[j] != e.chart)
+                charts[j].toolTip.hide();
+            }
+          }
+        }
+
+        if (!this.onCrosshairUpdated) {
+          this.onCrosshairUpdated = function (e) {
+            for (var j = 0; j < charts.length; j++) {
+              if (charts[j] != e.chart)
+                charts[j].axisX[0].crosshair.showAt(e.value);
+            }
+          }
+        }
+
+        if (!this.onCrosshairHidden) {
+          this.onCrosshairHidden = function (e) {
+            for (var j = 0; j < charts.length; j++) {
+              if (charts[j] != e.chart)
+                charts[j].axisX[0].crosshair.hide();
+            }
+          }
+        }
+
+        if (!this.onRangeChanged) {
+          this.onRangeChanged = function (e) {
+            for (var j = 0; j < charts.length; j++) {
+              if (e.trigger === "reset") {
+                charts[j].options.axisX.viewportMinimum = charts[j].options.axisX.viewportMaximum = null;
+                charts[j].options.axisY.viewportMinimum = charts[j].options.axisY.viewportMaximum = null;
+                charts[j].render();
+              } else if (charts[j] !== e.chart) {
+                charts[j].options.axisX.viewportMinimum = e.axisX[0].viewportMinimum;
+                charts[j].options.axisX.viewportMaximum = e.axisX[0].viewportMaximum;
+                charts[j].render();
+              }
+            }
+          }
+        }
+
+        for (var i = 0; i < charts.length; i++) {
+
+          //Sync ToolTip
+          if (syncToolTip) {
+            if (!charts[i].options.toolTip)
+              charts[i].options.toolTip = {};
+
+            charts[i].options.toolTip.updated = this.onToolTipUpdated;
+            charts[i].options.toolTip.hidden = this.onToolTipHidden;
+          }
+
+          //Sync Crosshair
+          if (syncCrosshair) {
+            if (!charts[i].options.axisX)
+              charts[i].options.axisX = { crosshair: { enabled: true } };
+
+            charts[i].options.axisX.crosshair.updated = this.onCrosshairUpdated;
+            charts[i].options.axisX.crosshair.hidden = this.onCrosshairHidden;
+          }
+
+          //Sync Zoom / Pan
+          if (syncAxisXRange) {
+            charts[i].options.zoomEnabled = true;
+            charts[i].options.rangeChanged = this.onRangeChanged;
+          }
+        }
+      }
+
+      syncCharts(charts, true, true, true); // syncCharts(charts, syncToolTip, syncCrosshair, syncAxisXRange)
+
+      for (var i = 0; i < charts.length; i++) {
+        charts[i].render();
+      }
+
+
+
+
+    }
+
+
+    function updatePids() {
+
+      selectedChart[0].key1 = document.getElementById("container1s1").children[0].children[0].value;
+      selectedChart[0].key2 = document.getElementById("container1s2").children[0].children[0].value;
+      selectedChart[0].key3 = document.getElementById("container1s3").children[0].children[0].value;
+
+      selectedChart[1].key1 = document.getElementById("container2s1").children[0].children[0].value;
+      selectedChart[1].key2 = document.getElementById("container2s2").children[0].children[0].value;
+      selectedChart[1].key3 = document.getElementById("container2s3").children[0].children[0].value;
+
+      selectedChart[2].key1 = document.getElementById("container3s1").children[0].children[0].value;
+      selectedChart[2].key2 = document.getElementById("container3s2").children[0].children[0].value;
+      selectedChart[2].key3 = document.getElementById("container3s3").children[0].children[0].value;
+
+      selectedChart[3].key1 = document.getElementById("container4s1").children[0].children[0].value;
+      selectedChart[3].key2 = document.getElementById("container4s2").children[0].children[0].value;
+      selectedChart[3].key3 = document.getElementById("container4s3").children[0].children[0].value;
+    }
+
+    function buildDataPoints() {
+
+      //header 1 data points = dataPsArray[1]
+      for (var i = 0; i < headers.length; i++) {
+        dataPsArray[i] = [];
+        for (var j = 0; j < finalObject.length; j++) {
+          var currentHeader = headers[i];
+          var currentY = parseFloat(finalObject[j][currentHeader]);
+          switch (currentHeader) {
+            case "O2":
+              currentY = currentY / 1000;
+              break;
+            default:
+              currentY = currentY;
+          }
+
+          dataPsArray[i].push({ x: parseInt(j), y: currentY });
+        }
+      }
+
+    }
+
+
+
+    //graph stuff below
+
+    function cleanItems() {
+      document.getElementById("container1s1").removeChild(document.getElementById("container1s1").children[0]);
+      document.getElementById("container1s2").removeChild(document.getElementById("container1s2").children[0]);
+      document.getElementById("container1s3").removeChild(document.getElementById("container1s3").children[0]);
+      document.getElementById("container2s1").removeChild(document.getElementById("container2s1").children[0]);
+      document.getElementById("container2s2").removeChild(document.getElementById("container2s2").children[0]);
+      document.getElementById("container2s3").removeChild(document.getElementById("container2s3").children[0]);
+      document.getElementById("container3s1").removeChild(document.getElementById("container3s1").children[0]);
+      document.getElementById("container3s2").removeChild(document.getElementById("container3s2").children[0]);
+      document.getElementById("container3s3").removeChild(document.getElementById("container3s3").children[0]);
+      document.getElementById("container4s1").removeChild(document.getElementById("container4s1").children[0]);
+      document.getElementById("container4s2").removeChild(document.getElementById("container4s2").children[0]);
+      document.getElementById("container4s3").removeChild(document.getElementById("container4s3").children[0]);
+    }
+
+    function populateDefaultSelections() {
+      if (headers.length >= 12) {
+        if (headers.lastIndexOf("Spark") != -1) {
+          selectElement("container1s1", headers.lastIndexOf("Spark"));
+        } else {
+          selectElement("container1s1", 0);
+        }
+
+        if (headers.lastIndexOf("KR") != -1) {
+          selectElement("container1s2", headers.lastIndexOf("KR"));
+        } else {
+          selectElement("container1s2", 1);
+        }
+
+        if (headers.lastIndexOf("Gear") != -1) {
+          selectElement("container1s3", headers.lastIndexOf("Gear"));
+        } else {
+          selectElement("container1s3", 2);
+        }
+
+        if (headers.lastIndexOf("MAF") != -1) {
+          selectElement("container2s1", headers.lastIndexOf("MAF"));
+        } else {
+          selectElement("container2s1", 3);
+        }
+
+        if (headers.lastIndexOf("RPM") != -1) {
+          selectElement("container2s2", headers.lastIndexOf("RPM"));
+        } else {
+          selectElement("container2s2", 4);
+        }
+
+        if (headers.lastIndexOf("MPC") != -1) {
+          selectElement("container2s3", headers.lastIndexOf("MPC"));
+        } else {
+          selectElement("container2s3", 5);
+        }
+
+        if (headers.lastIndexOf("AFR") != -1) {
+          selectElement("container3s1", headers.lastIndexOf("AFR"));
+        } else {
+          selectElement("container3s1", 6);
+        }
+
+        if (headers.lastIndexOf("Measured_AFR_autometer") != -1) {
+          selectElement("container3s2", headers.lastIndexOf("Measured_AFR_autometer"));
+        } else {
+          selectElement("container3s2", 7);
+        }
+
+        if (headers.lastIndexOf("O2") != -1) {
+          selectElement("container3s3", headers.lastIndexOf("O2"));
+        } else {
+          selectElement("container3s3", 8);
+        }
+
+        if (headers.lastIndexOf("MAPkPa") != -1) {
+          selectElement("container4s1", headers.lastIndexOf("MAPkPa"));
+        } else {
+          selectElement("container4s1", 9);
+        }
+
+        if (headers.lastIndexOf("TP_percent") != -1) {
+          selectElement("container4s2", headers.lastIndexOf("TP_percent"));
+        } else {
+          selectElement("container4s2", 10);
+        }
+
+        if (headers.lastIndexOf("Inj_Duty_Cycle") != -1) {
+          selectElement("container4s3", headers.lastIndexOf("Inj_Duty_Cycle"));
+        } else {
+          selectElement("container4s3", 11);
+        }
+      }
+
+    }
+    function selectElement(id, valueToSelect) {
+      let element = document.getElementById(id).children[0].children[0];
+      element.selectedIndex = valueToSelect;
+    }
+
+
+    function loadItems() {
+
+      var values = headers;
+      var values2 = headers;
+
+      var select = document.createElement("select");
+      select.name = "pids";
+      select.id = "pids";
+      var select2 = document.createElement("select");
+      select2.name = "pids2";
+      select2.id = "pids2";
+      var select3 = document.createElement("select");
+      select3.name = "pids3";
+      select3.id = "pids3";
+      var select4 = document.createElement("select");
+      select4.name = "pids4";
+      select4.id = "pids4";
+      var select5 = document.createElement("select");
+      select5.name = "pids5";
+      select5.id = "pids5";
+      var select6 = document.createElement("select");
+      select6.name = "pids6";
+      select6.id = "pids6";
+      var select7 = document.createElement("select");
+      select7.name = "pids7";
+      select7.id = "pids7";
+      var select8 = document.createElement("select");
+      select8.name = "pids8";
+      select8.id = "pids8";
+      var select9 = document.createElement("select");
+      select9.name = "pids9";
+      select9.id = "pids9";
+      var select10 = document.createElement("select");
+      select10.name = "pids10";
+      select10.id = "pids10";
+      var select11 = document.createElement("select");
+      select11.name = "pids11";
+      select11.id = "pids11";
+      var select12 = document.createElement("select");
+      select12.name = "pids12";
+      select12.id = "pids12";
+
+      for (const val of values) {
+        var option = document.createElement("option");
+        option.value = val;
+        option.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select.appendChild(option);
+      }
+
+      for (const val of values2) {
+        var option2 = document.createElement("option");
+        option2.value = val;
+        option2.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select2.appendChild(option2);
+      }
+
+      for (const val of values) {
+        var option3 = document.createElement("option");
+        option3.value = val;
+        option3.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select3.appendChild(option3);
+      }
+
+      for (const val of values) {
+        var option4 = document.createElement("option");
+        option4.value = val;
+        option4.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select4.appendChild(option4);
+      }
+
+      for (const val of values) {
+        var option5 = document.createElement("option");
+        option5.value = val;
+        option5.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select5.appendChild(option5);
+      }
+
+      for (const val of values) {
+        var option6 = document.createElement("option");
+        option6.value = val;
+        option6.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select6.appendChild(option6);
+      }
+
+      for (const val of values) {
+        var option7 = document.createElement("option");
+        option7.value = val;
+        option7.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select7.appendChild(option7);
+      }
+
+      for (const val of values) {
+        var option8 = document.createElement("option");
+        option8.value = val;
+        option8.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select8.appendChild(option8);
+      }
+
+      for (const val of values) {
+        var option9 = document.createElement("option");
+        option9.value = val;
+        option9.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select9.appendChild(option9);
+      }
+
+      for (const val of values) {
+        var option10 = document.createElement("option");
+        option10.value = val;
+        option10.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select10.appendChild(option10);
+      }
+
+      for (const val of values) {
+        var option11 = document.createElement("option");
+        option11.value = val;
+        option11.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select11.appendChild(option11);
+      }
+
+      for (const val of values) {
+        var option12 = document.createElement("option");
+        option12.value = val;
+        option12.text = val.charAt(0).toUpperCase() + val.slice(1);
+
+        select12.appendChild(option12);
+      }
+
+      var label = document.createElement("label");
+      label.innterHTML = "Choose your PIDs: ";
+      label.htmlFor = "pids";
+      var label2 = document.createElement("label");
+      label2.innterHTML = "Choose your PIDs: ";
+      label2.htmlFor = "pids2";
+      var label3 = document.createElement("label");
+      label3.innterHTML = "Choose your PIDs: ";
+      label3.htmlFor = "pids3";
+      var label4 = document.createElement("label");
+      label4.innterHTML = "Choose your PIDs: ";
+      label4.htmlFor = "pids4";
+      var label5 = document.createElement("label");
+      label5.innterHTML = "Choose your PIDs: ";
+      label5.htmlFor = "pids5";
+      var label6 = document.createElement("label");
+      label6.innterHTML = "Choose your PIDs: ";
+      label6.htmlFor = "pids6";
+      var label7 = document.createElement("label");
+      label7.innterHTML = "Choose your PIDs: ";
+      label7.htmlFor = "pids7";
+      var label8 = document.createElement("label");
+      label8.innterHTML = "Choose your PIDs: ";
+      label8.htmlFor = "pids8";
+      var label9 = document.createElement("label");
+      label9.innterHTML = "Choose your PIDs: ";
+      label9.htmlFor = "pids9";
+      var label10 = document.createElement("label");
+      label10.innterHTML = "Choose your PIDs: ";
+      label10.htmlFor = "pids10";
+      var label11 = document.createElement("label");
+      label11.innterHTML = "Choose your PIDs: ";
+      label11.htmlFor = "pids11";
+      var label12 = document.createElement("label");
+      label12.innterHTML = "Choose your PIDs: ";
+      label12.htmlFor = "pids12";
+
+      document.getElementById("container1s1").appendChild(label).appendChild(select);
+      document.getElementById("container1s2").appendChild(label2).appendChild(select2);
+      document.getElementById("container1s3").appendChild(label3).appendChild(select3);
+      document.getElementById("container2s1").appendChild(label4).appendChild(select4);
+      document.getElementById("container2s2").appendChild(label5).appendChild(select5);
+      document.getElementById("container2s3").appendChild(label6).appendChild(select6);
+      document.getElementById("container3s1").appendChild(label7).appendChild(select7);
+      document.getElementById("container3s2").appendChild(label8).appendChild(select8);
+      document.getElementById("container3s3").appendChild(label9).appendChild(select9);
+      document.getElementById("container4s1").appendChild(label10).appendChild(select10);
+      document.getElementById("container4s2").appendChild(label11).appendChild(select11);
+      document.getElementById("container4s3").appendChild(label12).appendChild(select12);
+    }
+
+  </script>
+  <style>
+    .row:after {
+      content: "";
+      display: table;
+      clear: both;
+    }
+
+    .col {
+      float: left;
+      width: 75%;
+      height: 200px;
+    }
+
+    p {
+      color: green;
+      font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif
+    }
+
+    label {
+      color: green;
+      font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif
+    }
+
+    h2 {
+      color: green;
+      font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif
+    }
+  </style>
+</head>
+
+<body style="background-color:white">
+  <div class="row">
+    <div>
+      <h2>Simple Log Viewer</h2>
+      <p>Select a log file to view the data</h2> <br><br>
+        <input type="file" onchange="loadFile(this.files[0])">
+    </div>
+  </div>
+  <div class="row">
+    <div class="col" id="chartContainer1"></div>
+    <div class="colulmn" id="selection1">
+
+      <div id="container1s1"></div>
+
+      <div id="container1s2"></div>
+
+      <div id="container1s3"></div>
+      <br>
+      <button type="button" onclick="reRun()">Run New PIDs</button>
+
+    </div>
+  </div>
+  <div class="row">
+    <div class="col" id="chartContainer2"></div>
+    <div class="column" id="selection2">
+      <div id="container2s1"></div>
+
+      <div id="container2s2"></div>
+
+      <div id="container2s3"></div><br>
+      <button type="button" onclick="reRun()">Run New PIDs</button>
+
+
+    </div>
+  </div>
+  <div class="row">
+    <div class="col" id="chartContainer3"></div>
+    <div class="column" id="selection3">
+      <div id="container3s1"></div>
+
+      <div id="container3s2"></div>
+
+      <div id="container3s3"></div>
+      <br>
+      <button type="button" onclick="reRun()">Run New PIDs</button>
+
+    </div>
+  </div>
+  <div class="row">
+    <div class="col" id="chartContainer4"></div>
+    <div class="column" id="selection4">
+      <div id="container4s1"></div>
+
+      <div id="container4s2"></div>
+
+      <div id="container4s3"></div>
+      <br>
+      <button type="button" onclick="reRun()">Run New PIDs</button>
+
+    </div>
+  </div>
+  <div>
+    <input type="radio" id="light" name="theme" value="light" onClick="changeColor('l')">
+    <label for="light">Light Theme</label>
+    <input type="radio" id="dark" name="theme" value="dark" onClick="changeColor('d')">
+    <label for="dark">Dark Theme</label>
+  </div>
+
+  <script>
+    function changeColor(value) {
+      var color = document.body.style.backgroundColor;
+      switch (value) {
+        case 'l':
+          color = "white";
+          chartColor = "light2";
+          break;
+        case 'd':
+          color = "black";
+          chartColor = "dark2";
+          break;
+      }
+      document.body.style.backgroundColor = color;
+      run();
+    }
+  </script>
+  <script type="text/javascript" src="assets/jquery-1.11.1.min.js"></script>
+  <script src="assets/canvasjs.min.js"></script>
+
+
+</body>
+
+</html>
